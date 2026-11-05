@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from iapws import IAPWS97
 
 ### All distances are in m
 ### All units of energy are in W or J
@@ -28,8 +29,8 @@ class PWR:
 
         self.Tsat = 342.155
 
-        self.Temp = np.arange(0,self.Hi,dz)
-        self.Temp[0] = self.Tf0
+        self.Temp_f = np.arange(0,self.Hi,dz)
+        self.Temp_f[0] = self.Tf0
 
         self.P = np.arrange(0,self.Hi,dz)
         self.P[0] = self.P0
@@ -39,7 +40,17 @@ class PWR:
         self.Pw = np.pi * self.Dr
         self.Ph = np.pi * self.Dr
         self.Af = self.Pitch**2 - (0.25 * np.pi * (self.Dr**2))
-        self.Dh = 4 * self.Af / self.Ph
+        self.Dh = 4 * self.Af / self.Ph #hydraulic diameter
+
+
+        ### Massive difference in BWR, will have to change due to pressure
+
+        self.State_Initial = IAPWS97(P=self.P0/1e6, T=Tf0+273.15) #expects MPa and K
+        self.mu = self.State_Initial.mu #constant viscosity Pa *s
+        self.Re = self.G * self.Dh / self.mu
+        self.cp = self.State_Initial.cp #constant cp kJ/kg·K
+        self.kfluid = self.State_Initial.ThCond() # constant thermal conductivity of water
+        self.Pr = self.mu * self.cp / self.kfluid
 
     def q1(self, z): # Linear Heat Generation in fuel
         return self.q0 * np.sin(np.pi * z / self.Hi)
@@ -49,17 +60,22 @@ class PWR:
         ret = self.q1(z) / A_fuel
         return ret
 
+    ###########################
+    #  Heat Convection in fluid
+    ###########################
 
-    ##########
+    
+
+    ###########################
     #  Heat Generation In Rods
-    ##########
+    ###########################
     
     # [3]
 
-    def T_clad(self,z,r):
-        R = self.Dr / 2
-        C1 = 
-        T = C1 * np.log(r) + C2
+#    def T_clad(self,z,r):
+        # R = self.Dr / 2
+        # C1 = 
+        # T = C1 * np.log(r) + C2
 
 
     # [2]
@@ -101,5 +117,3 @@ class PWR:
 #     q0=380 * 1e2, # W/m
 #     P0=15e6, # Pa
 #     Tf0=277 ) # C 
-
-
