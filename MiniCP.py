@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from iawps import IAPWS97
+from scipy import newton
 
 ### All distances are in m
 ### All units of energy are in W or J
@@ -24,20 +25,11 @@ class PWR:
         self.kg = kg
         self.kf = kf
         self.kc = kc
+        self.G = G
         self.q0 = q0
         self.P0 = P0
         self.Tf0 = Tf0
         self.dz = dz
-
-        self.Tsat = 342.155 # C
-
-        self.Temp_f = np.arange(0,self.Hi,dz)
-        self.Temp_f[0] = self.Tf0
-
-        self.P = np.arrange(0,self.Hi,dz)
-        self.P[0] = self.P0
-
-        self.Xe = np.arange(0,self.Hi,dz)
 
         self.Pw = np.pi * self.Dr
         self.Ph = np.pi * self.Dr
@@ -51,6 +43,7 @@ class PWR:
         ### Massive difference in BWR, will have to change due to pressure
 
         self.State_Initial = IAPWS97(P=self.P0/1e6, T=Tf0+273.15) #expects MPa and K
+        self.Tsat = self.State_Initial.tsat
         self.mu = self.State_Initial.mu #constant viscosity Pa *s
         self.Re = self.Gap * self.Dh / self.mu
         self.cp = self.State_Initial.cp #constant cp kJ/kg·K
@@ -65,6 +58,88 @@ class PWR:
         A_fuel = 0.25 * self.Df**2 * np.pi
         ret = self.q1(z) / A_fuel
         return ret
+
+    def q2(self, z):
+        return self.q1(z) / self.Ph
+
+    #########################################
+    #  Pressure Drop
+    #########################################
+
+    def Pressure(self,z):
+        f = ((0.790 * np.log(self.Re)) - 1.64)**(-2)
+        DP = 0.5 * f * ((self.G**2 * self.PW) / (self.rho * self.Af)) * z
+        DP = DP + (self.rho * 9.81 * z)
+        return DP + self.P0 #TODO A unit analysis check to make sure it is MPa for IPWAS
+
+    def Pressure_Plot(self):
+        z = np.arange(0,self.Hi,self.dz)
+        P = np.copy(z)
+        for i in range(z):
+            P[i] = self.Pressure(z=i)
+
+        plt.figure()
+        plt.plot(P,z,label='Pa')
+        plt.xlabel('Channel Pressure [Pa]')
+        plt.ylabel('Channel Height [m]')
+        plt.grid(alpha=0.5,color='gray',linestyle=":")
+        plt.legend()
+        plt.savefig('Pressure.png',dpi=600)
+
+
+    ###########################
+    #  Quality
+    ###########################
+
+    def hf(self,z):
+        if z == 0:
+            return self.State_Initial.hf
+        else:
+            state = IAPWS97
+
+
+    def hf(arr)
+
+    def hf_array(self,z):
+        h_arr = np.linspace(0,self.Hi,self.dz)
+        h_arr[0] = self.State_Initial.hf
+        #T = self.T_2Phi()
+        T = self.T_fluid(z)
+            state = IAPWS97(P = Pressure
+
+
+
+    def X(self,z):
+        return 0 # always 0 for PWR
+
+    def delta_enthalpy_dz(self,z):
+        return self.q1(z) * self.Ph / (self.Af * self.G)
+
+    def delta_Xe(self,z):
+        state = IAPWS97(P=self.Pressure(z),T=self.T_fluid(z)+273.15) #MPa and K
+
+        hfg = state.hfg
+        hf = state.hf
+        dhdz = self.delta_enthalpy(z)
+
+        ret = (1/hfg) * ( (self.q1(z) / (self.Af * self.G)) -(dhdp + Xe))
+
+        return 0
+
+    def T_2Phi(self,z):
+        state = IAPWS97(P=self.Pressure(z),T=self.T_fluid(z)+273.15) #MPa and K
+
+        hfg = state.hfg
+        return 0
+
+    def T_2Phi_arr(self,z):
+        T_arr = np.linspace(0,self.Hi,self.dz)
+        T_arr[0] = self.State_Initial.hf
+
+        i = int(z * self.dz) # index in T_arr corresponding to z meters
+        T_arr[i] = self.T_2Phi(z)
+
+        return T_arr
 
     ###########################
     #  Heat Convection in fluid
@@ -122,31 +197,6 @@ class PWR:
         plt.grid(alpha=0.5,color='gray',linestyle=":")
         plt.legend()
         plt.savefig('CenterlineTemp.png',dpi=600)
-
-    #########################################
-    #  Pressure Drop
-    #########################################
-
-    def Pressure(self,z):
-        f = ((0.790 * np.log(self.Re)) - 1.64)**(-2)
-        DP = 0.5 * f * ((self.G**2 * self.PW) / (self.rho * self.Af)) * z
-        DP = DP + (self.rho * 9.81 * z)
-        return DP + self.P0
-
-    def Pressure_Plot(self):
-        z = np.arange(0,self.Hi,self.dz)
-        P = np.copy(z)
-        for i in range(z):
-            P[i] = self.Pressure(z=i)
-
-        plt.figure()
-        plt.plot(P,z,label='Pa')
-        plt.xlabel('Channel Pressure [Pa]')
-        plt.ylabel('Channel Height [m]')
-        plt.grid(alpha=0.5,color='gray',linestyle=":")
-        plt.legend()
-        plt.savefig('Pressure.png',dpi=600)
-
 
     def plotter(): # returns all plots and questions
             return 0 #TODO
