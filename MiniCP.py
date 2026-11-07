@@ -88,58 +88,75 @@ class PWR:
 
 
     ###########################
-    #  Quality
+    #  Quality and Properties
     ###########################
 
-    def hf(self,z):
-        if z == 0:
-            return self.State_Initial.hf
-        else:
-            state = IAPWS97
+    # def state(self,z,i):
+    #     state = IAPWS97(P = self.Pressure(z),T = self.T_2Phi_arr[i-1] + 273.15)
+    #     return state
+
+    # def hf(self,z):
+    #     if z == 0:
+    #         return self.State_Initial.hf
+    #     else:
+    #         i = int(self.dz * z)
+    #         return self.state(z,i-1).hf
+
+    # def hf_array(self,z):
+    #     h_arr = np.linspace(0,self.Hi,self.dz)
+    #     h_arr[0] = self.State_Initial.hf
+
+    #     i = int(z * self.dz) 
+    #     h_arr[i] = self.hf(z)
+    #     return z
 
 
-    def hf(arr)
+    # def hfg(self,z):
+    #     if z == 0:
+    #         return self.State_Initial.hfg
+    #     else:
+    #         i = int(self.dz * z)
+    #         return self.state(z,i-1).hfg
 
-    def hf_array(self,z):
-        h_arr = np.linspace(0,self.Hi,self.dz)
-        h_arr[0] = self.State_Initial.hf
-        #T = self.T_2Phi()
-        T = self.T_fluid(z)
-            state = IAPWS97(P = Pressure
+    # def hfg_array(self,z):
+    #     h_arr = np.linspace(0,self.Hi,self.dz)
+    #     h_arr[0] = self.State_Initial.hfg
 
+    #     i = int(z * self.dz) 
+    #     h_arr[i] = self.hfg(z)
+    #     return z
 
+    # def T_2Phi(self,z):
+    #     i = int(self.dz * z)
+    #     hf = self.hf(z)
+    #     hfg = self.hfg(z)
+    #     Tf = (hfg / self.cp) * self.Xe(z) + self.Tsat
 
-    def X(self,z):
-        return 0 # always 0 for PWR
+    # def T_2Phi_arr(self,z):
+    #     T_arr = np.linspace(0,self.Hi,self.dz)
+    #     T_arr[0] = self.State_Initial.hf
 
-    def delta_enthalpy_dz(self,z):
-        return self.q1(z) * self.Ph / (self.Af * self.G)
+    #     i = int(z * self.dz) # index in T_arr corresponding to z meters
+    #     T_arr[i] = self.T_2Phi(z)
 
-    def delta_Xe(self,z):
-        state = IAPWS97(P=self.Pressure(z),T=self.T_fluid(z)+273.15) #MPa and K
+    #     return T_arr
 
-        hfg = state.hfg
-        hf = state.hf
-        dhdz = self.delta_enthalpy(z)
+    # def X(self,z):
+    #     return 0 # always 0 for PWR
 
-        ret = (1/hfg) * ( (self.q1(z) / (self.Af * self.G)) -(dhdp + Xe))
+    # def delta_Xe(self,z):
+    #     state = IAPWS97(P=self.Pressure(z),T=self.T_fluid(z)+273.15) #MPa and K
 
-        return 0
+    #     hfg = state.hfg
+    #     hf = state.hf
+    #     dhdz = self.delta_enthalpy(z)
 
-    def T_2Phi(self,z):
-        state = IAPWS97(P=self.Pressure(z),T=self.T_fluid(z)+273.15) #MPa and K
+    #     ret = (1/hfg) * ( (self.q1(z) / (self.Af * self.G)) 
 
-        hfg = state.hfg
-        return 0
+    #     return 0
 
-    def T_2Phi_arr(self,z):
-        T_arr = np.linspace(0,self.Hi,self.dz)
-        T_arr[0] = self.State_Initial.hf
-
-        i = int(z * self.dz) # index in T_arr corresponding to z meters
-        T_arr[i] = self.T_2Phi(z)
-
-        return T_arr
+    # def Xe(self,z):
+    #     return 0 # TODO
 
     ###########################
     #  Heat Convection in fluid
