@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from iapws import IAPWS97
+from iawps import IAPWS97
 
 ### All distances are in m
 ### All units of energy are in W or J
@@ -27,7 +27,7 @@ class PWR:
         self.Tf0 = Tf0
         self.dz = dz
 
-        self.Tsat = 342.155
+        self.Tsat = 342.155 # C
 
         self.Temp_f = np.arange(0,self.Hi,dz)
         self.Temp_f[0] = self.Tf0
@@ -42,6 +42,10 @@ class PWR:
         self.Af = self.Pitch**2 - (0.25 * np.pi * (self.Dr**2))
         self.Dh = 4 * self.Af / self.Ph #hydraulic diameter
 
+
+        self.R1 = self.Dr / 2 # Clad outer boundary
+        self.R3 = self.Df / 2 # Gap : Fuel boundary
+        self.R2 = self.R3 + self.G # Clad : Gap boundary
 
         ### Massive difference in BWR, will have to change due to pressure
 
@@ -64,21 +68,59 @@ class PWR:
     #  Heat Convection in fluid
     ###########################
 
-    
+    def h(self,z):
+        return 1 #TODO
 
     ###########################
-    #  Heat Generation In Rods
+    #  Heat Generation and Conduction In Rods
     ###########################
+
+    def T_clad(self,r,z):
+        C1 = -(self.q3(z) * self.R3**2) / (2 * self.kc)
+        C2 = ((self.q3(z) * self.R3**2) / (self.h(z) * 2 * self.kc))
+        C2 = C2 * ((self.kc / self.R1) + self.h(z) * np.log(self.R1)) + self.Tf0
+        T = C1 * np.log(r) + C2
+        return T
     
-    # [3]
+    def T_gap(self,r,z):
+        C1 = -(self.q3(z) * self.R3**2) / (2 * self.kc)
+        C2 = ((self.q3(z) * self.R3**2) / (self.h(z) * 2 * self.kc))
+        C2 = C2 * ((self.kc / self.R1) + self.h(z) * np.log(self.R1)) + self.Tf0
 
-#    def T_clad(self,z,r):
-        # R = self.Dr / 2
-        # C1 = 
-        # T = C1 * np.log(r) + C2
+        C3 = -(self.q3(z) * self.R3**2) / (2 * self.kg)
+        C4 = np.log(self.R2) * (C1 - C3) + C2
+
+        T = C3 * np.log(r) + C4
+        return T
+
+    def T_fuel(self,r,z):
+        C6 = 1
+        T = ( (-self.q3(z) * r**2) / (4* self.kf) ) + C6
+        return T
 
 
-    # [2]
+    def T_Rod(self,r,z):
+        C1 = -(self.q3(z) * self.R3**2) / (2 * self.kc)
+        C2 = ((self.q3(z) * self.R3**2) / (self.h(z) * 2 * self.kc))
+        C2 = C2 * ((self.kc / self.R1) + self.h(z) * np.log(self.R1)) + self.Tf0
+
+        C3 = -(self.q3(z) * self.R3**2) / (2 * self.kg)
+        C4 = np.log(self.R2) * (C1 - C3) + C2
+
+        C6 = C3*np.log(self.R3) + C4 + ((self.q3(z) * self.R3) / 4 * self.kf)
+
+        if r <= self.R3: # in fuel
+            T = ( (-self.q3(z) * r**2) / (4* self.kf) ) + C6
+
+        if (r > self.R3) and (r <= self.R2): # in gap
+            T = C3 * np.log(r) + C4
+
+        if (r > self.R2) and (r <= self.R3): #in clad
+            T = C1 * np.log(r) + C2
+
+        return T
+
+
 
 
     # [1] Fuel
@@ -102,6 +144,19 @@ class PWR:
     # T end
 
 
+######
+#   Conservation Equations
+######
+
+# def p_i(self,z) #solves for pressure at i of z
+# def h_i(self,z) #solves for enthaply at i of z
+
+# def Single_Phase(self,z):
+#   nested equations T_clad(R=Diameter) \ T_gap(r) \ T_fuel(r)
+#   Now can solve q''_clad into water coolant
+#   single phase equations as a function of z
+#   returns complete T_fluid and T_pressure array
+#  two phase equations will return all that and T array 
 
 
 # PWR1 = PWR(
@@ -116,4 +171,4 @@ class PWR:
 #     kc=21.5, # W/mC
 #     q0=380 * 1e2, # W/m
 #     P0=15e6, # Pa
-#     Tf0=277 ) # C 
+#     Tf0=277 ) # C
