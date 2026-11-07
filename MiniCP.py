@@ -75,8 +75,10 @@ class PWR:
         T = C7 + C8 * (1 - np.cos(np.pi * z / self.Hi))
         return T
 
-        def h(self,z):
-        return 1 #TODO
+    def h(self,z):
+        Nu = 0.023 * (self.Re**0.8) * (self.Pr**0.4)
+        h = (self.kfluid * Nu) / self.Dh
+        return h
         
 
     ###########################
@@ -86,11 +88,12 @@ class PWR:
     def T_Rod(self,r,z):
         q3 = self.q3(z)
         T_inf = self.T_fluid(z)
+        h = self.h(z)
 
 
         C1 = -(q3 * self.R3**2) / (2 * self.kc)
-        C2 = ((q3 * self.R3**2) / (self.h(z) * 2 * self.kc))
-        C2 = C2 * ((self.kc / self.R1) + self.h(z) * np.log(self.R1)) + T_inf
+        C2 = ((q3 * self.R3**2) / (h * 2 * self.kc))
+        C2 = C2 * ((self.kc / self.R1) + h * np.log(self.R1)) + T_inf
         C3 = -(q3 * self.R3**2) / (2 * self.kg)
         C4 = np.log(self.R2) * (C1 - C3) + C2
 
