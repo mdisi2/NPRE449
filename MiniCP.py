@@ -11,14 +11,14 @@ from iawps import IAPWS97
 
 class PWR:
 
-    def __init__(self, name, Hi, Dr, Pitch, Df, G, kg, kf, kc, q0, P0, Tf0, dz):
+    def __init__(self, name, Hi, Dr, Pitch, Df, Gap, kg, kf, kc, G, q0, P0, Tf0, dz):
 
         self.name = name
         self.Hi = Hi
         self.Dr = Dr
         self.Pitch = Pitch
         self.Df = Df
-        self.G = G
+        self.Gap = Gap
         self.kg = kg
         self.kf = kf
         self.kc = kc
@@ -45,14 +45,15 @@ class PWR:
 
         self.R1 = self.Dr / 2 # Clad outer boundary
         self.R3 = self.Df / 2 # Gap : Fuel boundary
-        self.R2 = self.R3 + self.G # Clad : Gap boundary
+        self.R2 = self.R3 + self.Gap # Clad : Gap boundary
 
         ### Massive difference in BWR, will have to change due to pressure
 
         self.State_Initial = IAPWS97(P=self.P0/1e6, T=Tf0+273.15) #expects MPa and K
         self.mu = self.State_Initial.mu #constant viscosity Pa *s
-        self.Re = self.G * self.Dh / self.mu
+        self.Re = self.Gap * self.Dh / self.mu
         self.cp = self.State_Initial.cp #constant cp kJ/kg·K
+        self.rho = self.State_Initial.rho # constant density in single phase
         self.kfluid = self.State_Initial.ThCond() # constant thermal conductivity of water
         self.Pr = self.mu * self.cp / self.kfluid
 
@@ -68,11 +69,15 @@ class PWR:
     #  Heat Convection in fluid
     ###########################
 
-    def h(self,z):
-        return 1 #TODO
-
     def T_fluid(self,z):
-        return 1 # TODO
+        C7 = self.Tf0
+        C8 = (self.q0 * self.Hi) / (self.G * self.Af * self.cp * np.pi)
+        T = C7 + C8 * (1 - np.cos(np.pi * z / self.Hi))
+        return T
+
+        def h(self,z):
+        return 1 #TODO
+        
 
     ###########################
     #  Heat Generation and Conduction In Rods
@@ -124,10 +129,11 @@ class PWR:
 #     Dr=0.94e-2, # m
 #     P=1.25e-2, # m
 #     Df=0.81e-2, # m
-#     G=0.005e-2, # m
+#     Gap=0.005e-2, # m
 #     kg=0.25, # W/mC
 #     kf=3.6, # W/mC
 #     kc=21.5, # W/mC
+#     G= 3800 # kg/m2 s
 #     q0=380 * 1e2, # W/m
 #     P0=15e6, # Pa
 #     Tf0=277 ) # C
