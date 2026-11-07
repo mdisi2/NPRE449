@@ -71,77 +71,36 @@ class PWR:
     def h(self,z):
         return 1 #TODO
 
+    def T_fluid(self,z):
+        return 1 # TODO
+
     ###########################
     #  Heat Generation and Conduction In Rods
     ###########################
 
-    def T_clad(self,r,z):
-        C1 = -(self.q3(z) * self.R3**2) / (2 * self.kc)
-        C2 = ((self.q3(z) * self.R3**2) / (self.h(z) * 2 * self.kc))
-        C2 = C2 * ((self.kc / self.R1) + self.h(z) * np.log(self.R1)) + self.Tf0
-        T = C1 * np.log(r) + C2
-        return T
-    
-    def T_gap(self,r,z):
-        C1 = -(self.q3(z) * self.R3**2) / (2 * self.kc)
-        C2 = ((self.q3(z) * self.R3**2) / (self.h(z) * 2 * self.kc))
-        C2 = C2 * ((self.kc / self.R1) + self.h(z) * np.log(self.R1)) + self.Tf0
-
-        C3 = -(self.q3(z) * self.R3**2) / (2 * self.kg)
-        C4 = np.log(self.R2) * (C1 - C3) + C2
-
-        T = C3 * np.log(r) + C4
-        return T
-
-    def T_fuel(self,r,z):
-        C6 = 1
-        T = ( (-self.q3(z) * r**2) / (4* self.kf) ) + C6
-        return T
-
-
     def T_Rod(self,r,z):
-        C1 = -(self.q3(z) * self.R3**2) / (2 * self.kc)
-        C2 = ((self.q3(z) * self.R3**2) / (self.h(z) * 2 * self.kc))
-        C2 = C2 * ((self.kc / self.R1) + self.h(z) * np.log(self.R1)) + self.Tf0
+        q3 = self.q3(z)
+        T_inf = self.T_fluid(z)
 
-        C3 = -(self.q3(z) * self.R3**2) / (2 * self.kg)
+
+        C1 = -(q3 * self.R3**2) / (2 * self.kc)
+        C2 = ((q3 * self.R3**2) / (self.h(z) * 2 * self.kc))
+        C2 = C2 * ((self.kc / self.R1) + self.h(z) * np.log(self.R1)) + T_inf
+        C3 = -(q3 * self.R3**2) / (2 * self.kg)
         C4 = np.log(self.R2) * (C1 - C3) + C2
 
-        C6 = C3*np.log(self.R3) + C4 + ((self.q3(z) * self.R3) / 4 * self.kf)
+        C6 = C3*np.log(self.R3) + C4 + ((q3 * self.R3**2) / (4 * self.kf))
 
         if r <= self.R3: # in fuel
-            T = ( (-self.q3(z) * r**2) / (4* self.kf) ) + C6
+            T = ( (-q3 * r**2) / (4* self.kf) ) + C6
 
         if (r > self.R3) and (r <= self.R2): # in gap
             T = C3 * np.log(r) + C4
 
-        if (r > self.R2) and (r <= self.R3): #in clad
+        if (r > self.R2) and (r <= self.R1): #in clad
             T = C1 * np.log(r) + C2
 
         return T
-
-
-
-
-    # [1] Fuel
-
-    # def T_fuel(self,z,r):
-    #     T = -(self.q3(z) * r**2) / (4 * self.kf)
-    #     C = 
-    #     return T 
-    
-    # [2] Rod
-
-#    def T_gap(self,z):
-
-
-
-
-    # [3] Clad
-
-
-
-    # T end
 
 
 ######
