@@ -55,6 +55,13 @@ class PWR:
         self.P_arr = self.Pressure(self.z) # Pa
         self.Tsat_arr = np.array([IAPWS97(P=p/1e6, x=0).T - 273.15 for p in self.P_arr]) # C
 
+        # self.T_fluid_arr = self.T_fluid(self.z)
+        # self.Xe_arr = self.Xe(self.z)
+        # self.hf_arr = self.hf(self.z)
+        # self.hf_arr[0] = self.State_Initial.hf
+        # self.hfg_arr = self.hfg(self.z)
+        # self.hfg_arr[0] = self.State_Initial.hfg
+
     def q1(self, z): # Linear Heat Generation in fuel
         return self.q0 * np.sin(np.pi * z / self.Hi)
 
@@ -84,11 +91,39 @@ class PWR:
         plt.ylabel('Channel Height [m]')
         plt.grid(alpha=0.5,color='gray',linestyle=":")
         plt.legend()
-        plt.savefig('Pressure.png',dpi=600)
+        plt.savefig(f'{self.name}_Pressure.png',dpi=600)
 
     ###########################
     #  Quality and Properties
     ###########################
+
+
+    def The_Setp_Method(self,arr,i):
+        """
+        In two phase, finding you often are finding temperature for an item that
+        depends on the previous item in some other array (like temperature). This method will take into account the 'step back' to solve for i. 
+
+        """
+
+    def T2P(self,z,i):
+        Xe = self.Xe(z)
+        hfg = self.hfg(z)
+        hf = self.hf(z)
+        state = IAPWS97(P=self.Pressure(z)/1e6, T=self.T_arr[i-1])
+
+        if Xe <= 0:
+            return self.T_fluid(z)
+        if Xe < 1 and Xe >= 1:
+            TF = (hfg / self.cp) * Xe + self.Tsat_arr[i]
+            return TF
+        if Xe > 1:
+            return self.T_fluid(z)
+
+    def hf(self,z):
+        if z == 0:
+            return self.hf_arr[0]
+        else:
+            state = IAPWS97(P=self.Pressure(z)/1e6, T=T2P(z))
 
     # def state(self,z,i):
     #     state = IAPWS97(P = self.Pressure(z),T = self.T_2Phi_arr[i-1] + 273.15)
@@ -205,10 +240,10 @@ class PWR:
 
         plt.figure()
 
-        T = np.zeros_like(z)
-        for j, zj in enumerate(z):
-            T[j] = self.T_Rod(r=0,z=zj)
-        plt.plot(T,z,label=f'Centerline',color='red')
+        # T = np.zeros_like(z)
+        # for j, zj in enumerate(z):
+        #     T[j] = self.T_Rod(r=0,z=zj)
+        # plt.plot(T,z,label=f'Centerline',color='red')
 
         T = np.zeros_like(z)
         for j, zj in enumerate(z):
@@ -220,13 +255,12 @@ class PWR:
             T[j] = self.T_fluid(z=zj)
         plt.plot(T,z,label=f'Bulk Fluid',color='blue')
 
-        
         plt.plot(self.Tsat_arr,z,label=f'Tsat',color='green',linestyle=':')
         plt.xlabel('Temperature [C]')
         plt.ylabel('Channel Height [m]')
         plt.grid(alpha=0.5,color='gray',linestyle=":")
         plt.legend()
-        plt.savefig('Temp.png',dpi=600)
+        plt.savefig(f'{self.name}_Temp.png',dpi=600)
 
     def plotter(self): # returns all plots and questions
         self.Temperature_Plot()
@@ -235,7 +269,7 @@ class PWR:
 
 
 Option_1 = PWR(
-    name='PWR',
+    name='PWR Option 1',
     Hi=4.1, # m
     Dr=0.94e-2, # m
     Pitch=1.25e-2, # m
