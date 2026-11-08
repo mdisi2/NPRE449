@@ -1,20 +1,18 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from iawps import IAPWS97
-from scipy import newton
+from iapws import IAPWS97
+#from scipy import newton
 
 ### All distances are in m
 ### All units of energy are in W or J
 ### All temperatures are in C
-
-# Saturation temp of water at 15MPA 
-# https://www.nist.gov/system/files/documents/srd/NISTIR5078-Tab3.pdf
+### Pressure is expected in Pa
 
 class PWR:
 
     def __init__(self, name, Hi, Dr, Pitch, 
                  Df, Gap, kg, kf, kc, G, q0, 
-                 P0, Tf0, dz, dr):
+                 P0, Tf0, dz):
 
         self.name = name
         self.Hi = Hi
@@ -27,7 +25,7 @@ class PWR:
         self.kc = kc
         self.G = G
         self.q0 = q0
-        self.P0 = P0
+        self.P0 = P0 # Pa
         self.Tf0 = Tf0
         self.dz = dz
 
@@ -42,14 +40,20 @@ class PWR:
 
         ### Massive difference in BWR, will have to change due to pressure
 
-        self.State_Initial = IAPWS97(P=self.P0/1e6, T=Tf0+273.15) #expects MPa and K
-        self.Tsat = self.State_Initial.tsat
-        self.mu = self.State_Initial.mu #constant viscosity Pa *s
-        self.Re = self.Gap * self.Dh / self.mu
-        self.cp = self.State_Initial.cp #constant cp kJ/kg·K
-        self.rho = self.State_Initial.rho # constant density in single phase
-        self.kfluid = self.State_Initial.ThCond() # constant thermal conductivity of water
+        self.State_Initial = IAPWS97(P=self.P0/1e6, T=self.Tf0+273.15) # MPa, K
+        self.Tsat = IAPWS97(P=self.P0/1e6, x=0).T - 273.15   # C
+        self.mu = self.State_Initial.mu              # Pa *s
+        self.cp = self.State_Initial.cp * 1e3        # J/kg·K
+        self.rho = self.State_Initial.rho             # kg/m3
+        self.kfluid = self.State_Initial.k               # W/m·K
         self.Pr = self.mu * self.cp / self.kfluid
+        self.Re = self.G * self.Dh / self.mu
+
+        ###
+
+        self.z = np.arange(0, self.Hi, self.dz)
+        self.P_arr = self.Pressure(self.z) # Pa
+        self.Tsat_arr = np.array([IAPWS97(P=p/1e6, x=0).T - 273.15 for p in self.P_arr]) # C
 
     def q1(self, z): # Linear Heat Generation in fuel
         return self.q0 * np.sin(np.pi * z / self.Hi)
@@ -68,24 +72,19 @@ class PWR:
 
     def Pressure(self,z):
         f = ((0.790 * np.log(self.Re)) - 1.64)**(-2)
-        DP = 0.5 * f * ((self.G**2 * self.PW) / (self.rho * self.Af)) * z
+        DP = f * ((self.G**2 * self.Pw) / (8 * self.rho * self.Af)) * z
         DP = DP + (self.rho * 9.81 * z)
-        return DP + self.P0 #TODO A unit analysis check to make sure it is MPa for IPWAS
+        return self.P0 - DP
 
     def Pressure_Plot(self):
-        z = np.arange(0,self.Hi,self.dz)
-        P = np.copy(z)
-        for i in range(z):
-            P[i] = self.Pressure(z=i)
 
         plt.figure()
-        plt.plot(P,z,label='Pa')
-        plt.xlabel('Channel Pressure [Pa]')
+        plt.plot((self.P_arr)/1e6,self.z,label='Fluid Pressure',color='orange')
+        plt.xlabel('Channel Pressure [MPa]')
         plt.ylabel('Channel Height [m]')
         plt.grid(alpha=0.5,color='gray',linestyle=":")
         plt.legend()
         plt.savefig('Pressure.png',dpi=600)
-
 
     ###########################
     #  Quality and Properties
@@ -201,54 +200,54 @@ class PWR:
 
         return T
 
-    def T_Centerline(self):
-        z = np.arange(0,self.Hi,self.dz)
-        T = np.copy(z)
-        for i in range(z):
-            T[i] = self.T_Rod(r=0,z=i)
+    def Temperature_Plot(self):
+        z = self.z
 
         plt.figure()
-        plt.plot(T,z,label='Centerline Temp')
-        plt.xlabel('Centerline Temperature [C]')
+
+        T = np.zeros_like(z)
+        for j, zj in enumerate(z):
+            T[j] = self.T_Rod(r=0,z=zj)
+        plt.plot(T,z,label=f'Centerline',color='red')
+
+        T = np.zeros_like(z)
+        for j, zj in enumerate(z):
+            T[j] = self.T_Rod(r=self.R1,z=zj)
+        plt.plot(T,z,label=f'Clad Surface',color='orange')
+
+        T = np.zeros_like(z)
+        for j, zj in enumerate(z):
+            T[j] = self.T_fluid(z=zj)
+        plt.plot(T,z,label=f'Bulk Fluid',color='blue')
+
+        
+        plt.plot(self.Tsat_arr,z,label=f'Tsat',color='green',linestyle=':')
+        plt.xlabel('Temperature [C]')
         plt.ylabel('Channel Height [m]')
         plt.grid(alpha=0.5,color='gray',linestyle=":")
         plt.legend()
-        plt.savefig('CenterlineTemp.png',dpi=600)
+        plt.savefig('Temp.png',dpi=600)
 
-    def plotter(): # returns all plots and questions
-            return 0 #TODO
-
-        
-
-
-######
-#   Conservation Equations
-######
-
-# def p_i(self,z) #solves for pressure at i of z
-# def h_i(self,z) #solves for enthaply at i of z
-
-# def Single_Phase(self,z):
-#   nested equations T_clad(R=Diameter) \ T_gap(r) \ T_fuel(r)
-#   Now can solve q''_clad into water coolant
-#   single phase equations as a function of z
-#   returns complete T_fluid and T_pressure array
-#  two phase equations will return all that and T array 
+    def plotter(self): # returns all plots and questions
+        self.Temperature_Plot()
+        self.Pressure_Plot()
+        print(f'{self.name} Plotted!')
 
 
-# PWR1 = PWR(
-#     name='PWR 1',
-#     Hi=4.1, # m
-#     Dr=0.94e-2, # m
-#     P=1.25e-2, # m
-#     Df=0.81e-2, # m
-#     Gap=0.005e-2, # m
-#     kg=0.25, # W/mC
-#     kf=3.6, # W/mC
-#     kc=21.5, # W/mC
-#     G= 3800 # kg/m2 s
-#     q0=380 * 1e2, # W/m
-#     P0=15e6, # Pa
-#     Tf0=277, # C
-#     dz = 0.1 # m
-#     dr = 0.001) #m
+Option_1 = PWR(
+    name='PWR',
+    Hi=4.1, # m
+    Dr=0.94e-2, # m
+    Pitch=1.25e-2, # m
+    Df=0.81e-2, # m
+    Gap=0.005e-2, # m
+    kg=0.25, # W/mC
+    kf=3.6, # W/mC
+    kc=21.5, # W/mC
+    G= 3800 ,# kg/m2 s
+    q0=380 * 1e2, # W/m
+    P0=15e6, # Pa
+    Tf0=277, # C
+    dz = 0.1 ) #m
+
+Option_1.plotter()
