@@ -1,18 +1,18 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from iapws import IAPWS97
-#from scipy import newton
+from scipy.optimize import newton
 
 ### All distances are in m
 ### All units of energy are in W or J
 ### All temperatures are in C
 ### Pressure is expected in Pa
 
-class PWR:
+class Reactor:
 
     def __init__(self, name, Hi, Dr, Pitch, 
                  Df, Gap, kg, kf, kc, G, q0, 
-                 P0, Tf0, dz):
+                 P0, Tf0, dz, mode='PWR'):
 
         self.name = name
         self.Hi = Hi
@@ -28,6 +28,7 @@ class PWR:
         self.P0 = P0 # Pa
         self.Tf0 = Tf0
         self.dz = dz
+        self.mode = mode
 
         self.Pw = np.pi * self.Dr
         self.Ph = np.pi * self.Dr
@@ -54,13 +55,11 @@ class PWR:
         self.z = np.arange(0, self.Hi, self.dz)
         self.P_arr = self.Pressure(self.z) # Pa
         self.Tsat_arr = np.array([IAPWS97(P=p/1e6, x=0).T - 273.15 for p in self.P_arr]) # C
+        self.T_fluid_arr = np.zeros_like(self.z)
+        self.T_fluid_arr[0] = self.Tf0
 
-        # self.T_fluid_arr = self.T_fluid(self.z)
-        # self.Xe_arr = self.Xe(self.z)
-        # self.hf_arr = self.hf(self.z)
-        # self.hf_arr[0] = self.State_Initial.hf
-        # self.hfg_arr = self.hfg(self.z)
-        # self.hfg_arr[0] = self.State_Initial.hfg
+        self.Xe_arr = np.zeros_like(self.z)
+        self.Xe_arr[0] = 0 # TODO
 
     def q1(self, z): # Linear Heat Generation in fuel
         return self.q0 * np.sin(np.pi * z / self.Hi)
@@ -78,10 +77,20 @@ class PWR:
     #########################################
 
     def Pressure(self,z):
-        f = ((0.790 * np.log(self.Re)) - 1.64)**(-2)
+        if self.mode == 'PWR':
+            f = self.f1P()
+            acc = 0
+        if self.mode == 'BWR' :
+            acc = 0 #TODO
         DP = f * ((self.G**2 * self.Pw) / (8 * self.rho * self.Af)) * z
-        DP = DP + (self.rho * 9.81 * z)
+        DP = DP + (self.rho * 9.81 * z) + acc
         return self.P0 - DP
+
+    def f1P(self):
+        return ((0.790 * np.log(self.Re)) - 1.64)**(-2)
+
+    def f2P(self):
+        return 0 # TODO
 
     def Pressure_Plot(self):
 
@@ -97,48 +106,85 @@ class PWR:
     #  Quality and Properties
     ###########################
 
-
-    def The_Setp_Method(self,arr,i):
-        """
-        In two phase, finding you often are finding temperature for an item that
-        depends on the previous item in some other array (like temperature). This method will take into account the 'step back' to solve for i. 
-
-        """
-
     def T2P(self,z,i):
-        Xe = self.Xe(z)
-        hfg = self.hfg(z)
-        hf = self.hf(z)
-        state = IAPWS97(P=self.Pressure(z)/1e6, T=self.T_arr[i-1])
+        TF = self.T_fluid_arr[i]
+        Tsat = self.Tsat_arr[i]
 
-        if Xe <= 0:
-            return self.T_fluid(z)
-        if Xe < 1 and Xe >= 1:
-            TF = (hfg / self.cp) * Xe + self.Tsat_arr[i]
-            return TF
-        if Xe > 1:
-            return self.T_fluid(z)
+        state = IAPWS97(P=self.Pressure(z)/1e6, T=self.T_fluid_arr[i])
+        sat = IAPWS97(P=self.Pressure(z)/1e6, x=0)
+
+        if TF < Tsat:
+            X = 0
+            Xe = (state.cp * TF) - (sat.cp * Tsat) / (sat.Hvap) 
+            rho = ((1-X)* state.v + X*state.v)**(-1)
+            T = (self.hfg(z) / state.cp) * Xe + Tsat 
+
+            return T
+
+        if TF == Tsat:
+            X = Xe
+            rho = ((1-X)* state.v + X*state.v)**(-1)
+            return Tsat #TSAT
+        
+        if TF > Tsat:
+            Xe = (state.cp * TF) - (sat.cp * Tsat) / (sat.Hvap)
+            X = 1 
+            rho = ((1-X)* state.v + X*state.v)**(-1)
+
+            T = (self.hfg(z) / state.cp) * Xe + Tsat 
+
+            return T
 
     def hf(self,z):
-        if z == 0:
-            return self.hf_arr[0]
-        else:
-            state = IAPWS97(P=self.Pressure(z)/1e6, T=T2P(z))
+            state = IAPWS97(P=self.Pressure(z)/1e6,x=0) 
+            return state.h * 1e3 # J/kg
 
+    def hfg(self,z):
+            state = IAPWS97(P=self.Pressure(z)/1e6, x=0) 
+            return state.Hvap * 1e3 # K/kg
+
+    def dPdz(self, z):
+        dPdz_arr = np.gradient(self.P_arr, self.z)
+        return np.interp(z, self.z, dPdz_arr)
+
+    def dXedz(self, z):
+        Xe = self.Xe(z)
+        P = self.Pressure(z)/1e6 #MPa
+        dP = 1e-3 # small step for delta p MPA
+        dhf_dP = (IAPWS97(P=P+dP, x=0).h - IAPWS97(P=P-dP, x=0).h) * 1e3 / (2*dP*1e6)
+        dhfg_dP = (IAPWS97(P=P+dP, x=1).Hvap - IAPWS97(P=P-dP, x=1).Hvap) * 1e3 / (2*dP*1e6)
+
+        dP_dz = self.dPdz(z)
+        dh_dz = self.q1(z) / (self.Af * self.G)
+        return (dh_dz - (dhf_dP + Xe * dhfg_dP) * dP_dz) / self.hfg(z)
+
+    def Xe0(self):
+        h0 = IAPWS97(P=self.P0/1e6, T=self.Tf0 + 273.15).h
+        sat = IAPWS97(P=self.P0/1e6, x=0)
+
+        return (h0 - sat.h) / sat.Hvap
+
+    #newton
 
     ###########################
     #  Heat Convection in fluid
     ###########################
 
-    def T_fluid(self,z):
-        C7 = self.Tf0
-        C8 = (self.q0 * self.Hi) / (self.G * self.Af * self.cp * np.pi)
-        T = C7 + C8 * (1 - np.cos(np.pi * z / self.Hi))
+    def T1P(self,z):
+
+        if self.mode == 'PWR' :
+            C7 = self.Tf0
+            C8 = (self.q0 * self.Hi) / (self.G * self.Af * self.cp * np.pi)
+            T = C7 + C8 * (1 - np.cos(np.pi * z / self.Hi))
+
         return T
 
-    def h(self,z): # keeping it like this for ease when BWR retrofit
-        Nu = 0.023 * (self.Re**0.8) * (self.Pr**0.4)
-        h = (self.kfluid * Nu) / self.Dh
+    def h(self):
+        if self.mode == 'PWR':
+            Nu = 0.023 * (self.Re**0.8) * (self.Pr**0.4)
+            h = (self.kfluid * Nu) / self.Dh
+        if self.mode == 'BWR':
+            h = 0 #TODO
         return h
         
     #########################################
@@ -147,7 +193,12 @@ class PWR:
 
     def T_Rod(self,r,z):
         q3 = self.q3(z)
-        T_inf = self.T_fluid(z)
+
+        if self.mode == 'PWR':
+            T_inf = self.T1P(z)
+        if self.mode == 'BWR':
+            T_inf = self.T2P(z)
+
         h = self.h(z)
 
         C1 = -(q3 * self.R3**2) / (2 * self.kc)
@@ -202,7 +253,7 @@ class PWR:
         print(f'{self.name} Plotted!')
 
 
-Option_1 = PWR(
+Option_1 = Reactor(
     name='PWR Option 1',
     Hi=4.1, # m
     Dr=0.94e-2, # m
@@ -212,10 +263,11 @@ Option_1 = PWR(
     kg=0.25, # W/mC
     kf=3.6, # W/mC
     kc=21.5, # W/mC
-    G= 3800 ,# kg/m2 s
+    G= 3800, # kg/m2 s
     q0=380 * 1e2, # W/m
     P0=15e6, # Pa
     Tf0=277, # C
-    dz = 0.1 ) #m
+    dz = 0.1, # m 
+    mode= 'PWR' )
 
 Option_1.plotter()
