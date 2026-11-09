@@ -8,11 +8,11 @@ from scipy.optimize import newton
 ### All temperatures are in C
 ### Pressure is expected in Pa
 
-class Reactor:
+class PWR:
 
     def __init__(self, name, Hi, Dr, Pitch, 
                  Df, Gap, kg, kf, kc, G, q0, 
-                 P0, Tf0, dz, mode='PWR'):
+                 P0, Tf0, dz):
 
         self.name = name
         self.Hi = Hi
@@ -28,7 +28,6 @@ class Reactor:
         self.P0 = P0 # Pa
         self.Tf0 = Tf0
         self.dz = dz
-        self.mode = mode
 
         self.Pw = np.pi * self.Dr
         self.Ph = np.pi * self.Dr
@@ -53,13 +52,14 @@ class Reactor:
         ###
 
         self.z = np.arange(0, self.Hi, self.dz)
+        #self.N = len(self.z)
         self.P_arr = self.Pressure(self.z) # Pa
         self.Tsat_arr = np.array([IAPWS97(P=p/1e6, x=0).T - 273.15 for p in self.P_arr]) # C
         self.T_fluid_arr = np.zeros_like(self.z)
         self.T_fluid_arr[0] = self.Tf0
+        self.T_fluid_arr = self.T_fluid(self.z)
 
-        self.Xe_arr = np.zeros_like(self.z)
-        self.Xe_arr[0] = 0 # TODO
+        self.Xe_arr = np.array([self.Xe(z) for z in self.z])
 
     def q1(self, z): # Linear Heat Generation in fuel
         return self.q0 * np.sin(np.pi * z / self.Hi)
@@ -77,20 +77,13 @@ class Reactor:
     #########################################
 
     def Pressure(self,z):
-        if self.mode == 'PWR':
-            f = self.f1P()
-            acc = 0
-        if self.mode == 'BWR' :
-            acc = 0 #TODO
+        f = self.f1P()
         DP = f * ((self.G**2 * self.Pw) / (8 * self.rho * self.Af)) * z
-        DP = DP + (self.rho * 9.81 * z) + acc
+        DP = DP + (self.rho * 9.81 * z) 
         return self.P0 - DP
 
     def f1P(self):
         return ((0.790 * np.log(self.Re)) - 1.64)**(-2)
-
-    def f2P(self):
-        return 0 # TODO
 
     def Pressure_Plot(self):
 
@@ -106,85 +99,46 @@ class Reactor:
     #  Quality and Properties
     ###########################
 
-    def T2P(self,z,i):
-        TF = self.T_fluid_arr[i]
-        Tsat = self.Tsat_arr[i]
-
-        state = IAPWS97(P=self.Pressure(z)/1e6, T=self.T_fluid_arr[i])
-        sat = IAPWS97(P=self.Pressure(z)/1e6, x=0)
-
-        if TF < Tsat:
-            X = 0
-            Xe = (state.cp * TF) - (sat.cp * Tsat) / (sat.Hvap) 
-            rho = ((1-X)* state.v + X*state.v)**(-1)
-            T = (self.hfg(z) / state.cp) * Xe + Tsat 
-
-            return T
-
-        if TF == Tsat:
-            X = Xe
-            rho = ((1-X)* state.v + X*state.v)**(-1)
-            return Tsat #TSAT
-        
-        if TF > Tsat:
-            Xe = (state.cp * TF) - (sat.cp * Tsat) / (sat.Hvap)
-            X = 1 
-            rho = ((1-X)* state.v + X*state.v)**(-1)
-
-            T = (self.hfg(z) / state.cp) * Xe + Tsat 
-
-            return T
-
-    def hf(self,z):
-            state = IAPWS97(P=self.Pressure(z)/1e6,x=0) 
-            return state.h * 1e3 # J/kg
-
     def hfg(self,z):
-            state = IAPWS97(P=self.Pressure(z)/1e6, x=0) 
-            return state.Hvap * 1e3 # K/kg
+        P = self.Pressure(z) /1e6
+        hf = IAPWS97(P=P, x=0).h
+        hg = IAPWS97(P=P, x=1).h
+        return hg - hf
 
-    def dPdz(self, z):
-        dPdz_arr = np.gradient(self.P_arr, self.z)
-        return np.interp(z, self.z, dPdz_arr)
 
-    def dXedz(self, z):
-        Xe = self.Xe(z)
-        P = self.Pressure(z)/1e6 #MPa
-        dP = 1e-3 # small step for delta p MPA
-        dhf_dP = (IAPWS97(P=P+dP, x=0).h - IAPWS97(P=P-dP, x=0).h) * 1e3 / (2*dP*1e6)
-        dhfg_dP = (IAPWS97(P=P+dP, x=1).Hvap - IAPWS97(P=P-dP, x=1).Hvap) * 1e3 / (2*dP*1e6)
+    def Xe(self,z):
+        P = self.Pressure(z) /1e6
 
-        dP_dz = self.dPdz(z)
-        dh_dz = self.q1(z) / (self.Af * self.G)
-        return (dh_dz - (dhf_dP + Xe * dhfg_dP) * dP_dz) / self.hfg(z)
+        hi = IAPWS97(P=P, T=self.T_fluid(z) + 273.15).h
+        hf = IAPWS97(P=P, x=0).h
+        hg = IAPWS97(P=P, x=1).h
 
-    def Xe0(self):
-        h0 = IAPWS97(P=self.P0/1e6, T=self.Tf0 + 273.15).h
-        sat = IAPWS97(P=self.P0/1e6, x=0)
+        return (hi - hf) / (hg - hf)
 
-        return (h0 - sat.h) / sat.Hvap
+    def Xe_Plotter(self):
+        plt.figure()
+        plt.plot((self.Xe_arr),self.z,
+                 label=r'Equilibrium Quality $\chi_E$',color='maroon')
+        plt.xlabel(r'Equilibrium Quality $\chi_E$')
+        plt.ylabel('Channel Height [m]')
+        plt.grid(alpha=0.5,color='gray',linestyle=":")
+        plt.legend()
+        plt.savefig(f'{self.name}_Xe.png',dpi=600)
 
-    #newton
-
+    
     ###########################
     #  Heat Convection in fluid
     ###########################
 
-    def T1P(self,z):
-
-        if self.mode == 'PWR' :
-            C7 = self.Tf0
-            C8 = (self.q0 * self.Hi) / (self.G * self.Af * self.cp * np.pi)
-            T = C7 + C8 * (1 - np.cos(np.pi * z / self.Hi))
-
+    def T_fluid(self,z):
+        C7 = self.Tf0
+        C8 = (self.q0 * self.Hi) / (self.G * self.Af * self.cp * np.pi)
+        T = C7 + C8 * (1 - np.cos(np.pi * z / self.Hi))
         return T
 
-    def h(self):
-        if self.mode == 'PWR':
-            Nu = 0.023 * (self.Re**0.8) * (self.Pr**0.4)
-            h = (self.kfluid * Nu) / self.Dh
-        if self.mode == 'BWR':
-            h = 0 #TODO
+    def h(self,z):
+        Nu = 0.023 * (self.Re**0.8) * (self.Pr**0.4)
+        h = (self.kfluid * Nu) / self.Dh
         return h
         
     #########################################
@@ -193,11 +147,7 @@ class Reactor:
 
     def T_Rod(self,r,z):
         q3 = self.q3(z)
-
-        if self.mode == 'PWR':
-            T_inf = self.T1P(z)
-        if self.mode == 'BWR':
-            T_inf = self.T2P(z)
+        T_inf = self.T_fluid(z)
 
         h = self.h(z)
 
@@ -224,11 +174,9 @@ class Reactor:
         z = self.z
 
         plt.figure()
-
-        # T = np.zeros_like(z)
-        # for j, zj in enumerate(z):
-        #     T[j] = self.T_Rod(r=0,z=zj)
-        # plt.plot(T,z,label=f'Centerline',color='red')
+        plt.xlabel('Temperature [C]')
+        plt.ylabel('Channel Height [m]')
+        plt.grid(alpha=0.5,color='gray',linestyle=":")
 
         T = np.zeros_like(z)
         for j, zj in enumerate(z):
@@ -241,19 +189,27 @@ class Reactor:
         plt.plot(T,z,label=f'Bulk Fluid',color='blue')
 
         plt.plot(self.Tsat_arr,z,label=f'Tsat',color='green',linestyle=':')
-        plt.xlabel('Temperature [C]')
-        plt.ylabel('Channel Height [m]')
-        plt.grid(alpha=0.5,color='gray',linestyle=":")
+       
         plt.legend()
         plt.savefig(f'{self.name}_Temp.png',dpi=600)
+
+        T = np.zeros_like(z)
+        for j, zj in enumerate(z):
+            T[j] = self.T_Rod(r=0,z=zj)
+        plt.plot(T,z,label=f'Centerline',color='red')
+        
+        plt.legend()
+        plt.savefig(f'{self.name}_CenterlineTemp.png',dpi=600)
+
 
     def plotter(self): # returns all plots and questions
         self.Temperature_Plot()
         self.Pressure_Plot()
+        self.Xe_Plotter()
         print(f'{self.name} Plotted!')
 
 
-Option_1 = Reactor(
+Option_1 = PWR(
     name='PWR Option 1',
     Hi=4.1, # m
     Dr=0.94e-2, # m
@@ -267,7 +223,6 @@ Option_1 = Reactor(
     q0=380 * 1e2, # W/m
     P0=15e6, # Pa
     Tf0=277, # C
-    dz = 0.1, # m 
-    mode= 'PWR' )
+    dz = 0.1) # m
 
 Option_1.plotter()
