@@ -37,9 +37,6 @@ class PWR:
         self.R1 = self.Dr / 2 # Clad outer boundary
         self.R3 = self.Df / 2 # Gap : Fuel boundary
         self.R2 = self.R3 + self.Gap # Clad : Gap boundary
-
-        ### Massive difference in BWR, will have to change due to pressure
-
         self.State_Initial = IAPWS97(P=self.P0/1e6, T=self.Tf0+273.15) # MPa, K
         self.Tsat = IAPWS97(P=self.P0/1e6, x=0).T - 273.15   # C
         self.mu = self.State_Initial.mu              # Pa *s
@@ -52,14 +49,8 @@ class PWR:
         ###
 
         self.z = np.arange(0, self.Hi, self.dz)
-        #self.N = len(self.z)
         self.P_arr = self.Pressure(self.z) # Pa
         self.Tsat_arr = np.array([IAPWS97(P=p/1e6, x=0).T - 273.15 for p in self.P_arr]) # C
-        self.T_fluid_arr = np.zeros_like(self.z)
-        self.T_fluid_arr[0] = self.Tf0
-        self.T_fluid_arr = self.T_fluid(self.z)
-
-        self.Xe_arr = np.array([self.Xe(z) for z in self.z])
 
     def q1(self, z): # Linear Heat Generation in fuel
         return self.q0 * np.sin(np.pi * z / self.Hi)
@@ -103,22 +94,21 @@ class PWR:
         P = self.Pressure(z) /1e6
         hf = IAPWS97(P=P, x=0).h
         hg = IAPWS97(P=P, x=1).h
-        return hg - hf
+        return (hg - hf) * 1e3
 
+    def Xe(self, z):
+        h0 = IAPWS97(P=self.P0/1e6, T=self.Tf0 + 273.15).h
+        sat = IAPWS97(P=self.P0/1e6, x=0)
+        hfg0 = (IAPWS97(P=self.P0/1e6, x=1).h - sat.h) * 1e3   # J/kg
+        Xe_in = (h0 - sat.h) * 1e3 / hfg0
 
-    def Xe(self,z):
-        P = self.Pressure(z) /1e6
-
-        hi = IAPWS97(P=P, T=self.T_fluid(z) + 273.15).h
-        hf = IAPWS97(P=P, x=0).h
-        hg = IAPWS97(P=P, x=1).h
-
-        return (hi - hf) / (hg - hf)
+        A = (self.q0 / (self.Af * self.G * hfg0)) * (self.Hi / np.pi)
+        return A * (1 - np.cos(np.pi * z / self.Hi)) + Xe_in
 
     def Xe_Plotter(self):
         plt.figure()
-        plt.plot((self.Xe_arr),self.z,
-                 label=r'Equilibrium Quality $\chi_E$',color='maroon')
+        plt.plot([self.Xe(i) for i in self.z], self.z,
+                label=r'Equilibrium Quality $\chi_E$', color='maroon')
         plt.xlabel(r'Equilibrium Quality $\chi_E$')
         plt.ylabel('Channel Height [m]')
         plt.grid(alpha=0.5,color='gray',linestyle=":")
@@ -131,10 +121,11 @@ class PWR:
     ###########################
 
     def T_fluid(self,z):
-        C7 = self.Tf0
-        C8 = (self.q0 * self.Hi) / (self.G * self.Af * self.cp * np.pi)
-        T = C7 + C8 * (1 - np.cos(np.pi * z / self.Hi))
-        return T
+        P = self.Pressure(z) / 1e6
+        hfg = (IAPWS97(P=P,x=1).h - IAPWS97(P=P,x=0).h ) * 1e3
+        Tsat = IAPWS97(P=P,x=0).T - 273.15
+        TF = (self.Xe(z) * hfg / self.cp) + Tsat
+        return TF
 
     def h(self,z):
         Nu = 0.023 * (self.Re**0.8) * (self.Pr**0.4)
@@ -207,7 +198,7 @@ class PWR:
         self.Pressure_Plot()
         self.Xe_Plotter()
         print(f'{self.name} Plotted!')
-
+        plt.show()
 
 Option_1 = PWR(
     name='PWR Option 1',
@@ -226,3 +217,173 @@ Option_1 = PWR(
     dz = 0.1) # m
 
 Option_1.plotter()
+
+
+### Varying P
+
+P = np.arange(15e6, 5e6, -0.1e6)
+
+for i in P:
+    reactor = PWR(
+        name='PWR',
+        Hi=4.1, # m
+        Dr=0.94e-2, # m
+        Pitch=1.25e-2, # m
+        Df=0.81e-2, # m
+        Gap=0.005e-2, # m
+        kg=0.25, # W/mC
+        kf=3.6, # W/mC
+        kc=21.5, # W/mC
+        G= 3800, # kg/m2 s
+        q0=380 * 1e2, # W/m
+        P0=i, # Pa
+        Tf0=277, # C
+        dz = 0.1) # m
+
+    xe = reactor.Xe(reactor.z)
+
+    if np.max(xe) >= 0:
+        break
+
+plt.figure()
+plt.plot(Option_1.Pressure(Option_1.z)/1e6, Option_1.z, label='Option 1 15MPA')
+plt.plot(reactor.Pressure(reactor.z)/1e6, reactor.z, label=f'Critical {i/1e6:.3} MPa')
+plt.xlabel('Pressure MPa')
+plt.ylabel('Channel Height')
+plt.grid(alpha=0.5,color='gray',linestyle=":")
+plt.legend()
+plt.savefig('Critical Pressure Pressure.png',dpi=300)
+
+plt.figure()
+plt.plot([Option_1.T_fluid(zj) for zj in Option_1.z], Option_1.z, label='Option 1 bulk fluid')
+plt.plot([reactor.T_fluid(zj) for zj in reactor.z], reactor.z, label=f'Critical {i/1e6:.3} MPa')
+plt.axvline(x=Option_1.Tsat, color='gray', linestyle=':', label='Tsat Option 1')
+plt.axvline(x=reactor.Tsat, color='k', linestyle=':', label='Tsat critical case')
+plt.xlabel('Temp C')
+plt.ylabel('Channel Height')
+plt.grid(alpha=0.5,color='gray',linestyle=":")
+plt.legend()
+plt.savefig('Critical Pressure bulk fluid.png',dpi=300)
+
+plt.figure()
+plt.plot([Option_1.T_Rod(0, zj) for zj in Option_1.z], Option_1.z, label='Option 1 centerline 15 MPa')
+plt.plot([reactor.T_Rod(0, zj) for zj in reactor.z], reactor.z, label=f'Critical {i/1e6:.3} MPa Centerline')
+plt.xlabel('Temp C')
+plt.ylabel('Channel Height')
+plt.grid(alpha=0.5,color='gray',linestyle=":")
+plt.legend()
+plt.savefig('Critical Pressure centerline.png',dpi=300)
+
+#pitch
+
+Pitches = np.arange(1.25e-2, 0.95e-2, -0.005e-2)
+
+for pitch in Pitches:
+    reactor_p = PWR(
+        name='PWR',
+        Hi=4.1, # m
+        Dr=0.94e-2, # m
+        Pitch=pitch, # m
+        Df=0.81e-2, # m
+        Gap=0.005e-2, # m
+        kg=0.25, # W/mC
+        kf=3.6, # W/mC
+        kc=21.5, # W/mC
+        G= 3800, # kg/m2 s
+        q0=380 * 1e2, # W/m
+        P0=15e6, # Pa
+        Tf0=277, # C
+        dz = 0.1) # m
+
+    xe = reactor_p.Xe(reactor_p.z)
+
+    if np.max(xe) >= 0:
+        break
+
+pitch_crit = pitch
+
+plt.figure()
+plt.plot(Option_1.Pressure(Option_1.z)/1e6, Option_1.z, label='Option 1 pitch' )
+plt.plot(reactor_p.Pressure(reactor_p.z)/1e6, reactor_p.z, label=f'Critical Geometry {pitch*1e2:.3}')
+plt.xlabel('Pressure MPa')
+plt.ylabel('Channel Height')
+plt.grid(alpha=0.5,color='gray',linestyle=":")
+plt.legend()
+plt.savefig('Critical Pitch Pressure.png',dpi=300)
+
+plt.figure()
+plt.plot([Option_1.T_fluid(zj) for zj in Option_1.z], Option_1.z, label='Option 1 bulk fluid')
+plt.plot([reactor_p.T_fluid(zj) for zj in reactor_p.z], reactor_p.z, label=f'Critical Geometry {pitch*1e2:.3}')
+plt.axvline(x=Option_1.Tsat, color='gray', linestyle=':', label='Tsat')
+plt.xlabel('Temp C')
+plt.ylabel('Channel Height')
+plt.grid(alpha=0.5,color='gray',linestyle=":")
+plt.legend()
+plt.savefig('Critical Pitch bulk fluid.png',dpi=300)
+
+plt.figure()
+plt.plot([Option_1.T_Rod(0, zj) for zj in Option_1.z], Option_1.z, label='Option 1 centerline')
+plt.plot([reactor_p.T_Rod(0, zj) for zj in reactor_p.z], reactor_p.z, label=f'Critical Geometry {pitch*1e2:.3} Centerline')
+plt.axvline(x=Option_1.Tsat, color='gray', linestyle=':', label='Tsat')
+plt.xlabel('Temp C')
+plt.ylabel('Channel Height')
+plt.legend()
+plt.grid(alpha=0.5,color='gray',linestyle=":")
+plt.savefig('Critical Pitch centerline.png',dpi=300)
+plt.show()
+
+Tins = np.arange(277, 342, 0.5)   # C, stays below Tsat at 15 MPa (~342 C)
+
+for Tin in Tins:
+    reactor_T = PWR(
+        name='PWR',
+        Hi=4.1, # m
+        Dr=0.94e-2, # m
+        Pitch=1.25e-2, # m
+        Df=0.81e-2, # m
+        Gap=0.005e-2, # m
+        kg=0.25, # W/mC
+        kf=3.6, # W/mC
+        kc=21.5, # W/mC
+        G= 3800, # kg/m2 s
+        q0=380 * 1e2, # W/m
+        P0=15e6, # Pa
+        Tf0=Tin, # C
+        dz = 0.1) # m
+
+    xe = reactor_T.Xe(reactor_T.z)
+
+    if np.max(xe) >= 0:
+        break
+
+Tin_crit = Tin
+
+plt.figure()
+plt.plot(Option_1.Pressure(Option_1.z)/1e6, Option_1.z, label='Option 1 Tin 277 C')
+plt.plot(reactor_T.Pressure(reactor_T.z)/1e6, reactor_T.z, label=f'Critical Tin {Tin_crit:.1f} C')
+plt.xlabel('Pressure MPa')
+plt.ylabel('Channel Height')
+plt.grid(alpha=0.5,color='gray',linestyle=":")
+plt.legend()
+plt.savefig('Critical Tin Pressure.png',dpi=300)
+
+plt.figure()
+plt.plot([Option_1.T_fluid(zj) for zj in Option_1.z], Option_1.z, label='Option 1 bulk fluid')
+plt.plot([reactor_T.T_fluid(zj) for zj in reactor_T.z], reactor_T.z, label=f'Critical Tin {Tin_crit:.1f} C')
+plt.axvline(x=Option_1.Tsat, color='gray', linestyle=':', label='Tsat')
+plt.xlabel('Temp C')
+plt.ylabel('Channel Height')
+plt.grid(alpha=0.5,color='gray',linestyle=":")
+plt.legend()
+plt.savefig('Critical Tin bulk fluid.png',dpi=300)
+
+plt.figure()
+plt.plot([Option_1.T_Rod(0, zj) for zj in Option_1.z], Option_1.z, label='Option 1 centerline')
+plt.plot([reactor_T.T_Rod(0, zj) for zj in reactor_T.z], reactor_T.z, label=f'Critical Tin {Tin_crit:.1f} C Centerline')
+plt.axvline(x=Option_1.Tsat, color='gray', linestyle=':', label='Tsat')
+plt.xlabel('Temp C')
+plt.ylabel('Channel Height')
+plt.grid(alpha=0.5,color='gray',linestyle=":")
+plt.legend()
+plt.savefig('Critical Tin centerline.png',dpi=300)
+plt.show()

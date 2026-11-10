@@ -39,28 +39,14 @@ class Reactor:
         self.R3 = self.Df / 2 # Gap : Fuel boundary
         self.R2 = self.R3 + self.Gap # Clad : Gap boundary
 
-        ### Massive difference in BWR, will have to change due to pressure
-
         self.State_Initial = IAPWS97(P=self.P0/1e6, T=self.Tf0+273.15) # MPa, K
         self.Tsat = IAPWS97(P=self.P0/1e6, x=0).T - 273.15   # C
-        self.mu = self.State_Initial.mu              # Pa *s
-        self.cp = self.State_Initial.cp * 1e3        # J/kg·K
-        self.rho = self.State_Initial.rho             # kg/m3
-        self.kfluid = self.State_Initial.k               # W/m·K
+        self.cp = self.State_Initial.cp * 1e3 # J/kg·K
+        self.kfluid = self.State_Initial.k # W/m·K
         self.Pr = self.mu * self.cp / self.kfluid
         self.Re = self.G * self.Dh / self.mu
 
-        ###
-
-        self.z = np.arange(0, self.Hi, self.dz)
-        self.N = len(self.Z)
-        self.P_arr = self.Pressure(self.z) # Pa
-        self.Tsat_arr = np.array([IAPWS97(P=p/1e6, x=0).T - 273.15 for p in self.P_arr]) # C
-        self.T_fluid_arr = np.zeros_like(self.z)
-        self.T_fluid_arr[0] = self.Tf0
-
-        self.Xe_arr = np.zeros_like(self.z)
-        self.Xe_arr[0] = 0 # TODO
+        self.z = np.arange(0, self.Hi + (self.dz / 2), self.dz)
 
     def q1(self, z): # Linear Heat Generation in fuel
         return self.q0 * np.sin(np.pi * z / self.Hi)
@@ -72,6 +58,9 @@ class Reactor:
 
     def q2(self, z):
         return self.q1(z) / self.Ph
+
+    def mu(self,z):
+        return ((self.X(z)/IAPWS97(P=self.Pressure(z)/1e6,x=1).mu) + ((1-self.X(z)) / IAPWS97(P=self.Pressure(z)/1e6,x=0).mu))**(-1) # TODO check units
 
     #########################################
     #  Pressure Drop
@@ -93,79 +82,61 @@ class Reactor:
     def f2P(self):
         return 0 # TODO
 
-    def Pressure_Plot(self):
-
-        plt.figure()
-        plt.plot((self.P_arr)/1e6,self.z,label='Fluid Pressure',color='orange')
-        plt.xlabel('Channel Pressure [MPa]')
-        plt.ylabel('Channel Height [m]')
-        plt.grid(alpha=0.5,color='gray',linestyle=":")
-        plt.legend()
-        plt.savefig(f'{self.name}_Pressure.png',dpi=600)
-
     ###########################
     #  Quality and Properties
     ###########################
 
-    def T2P(self,z,i):
-        TF = self.T_fluid_arr[i]
-        Tsat = self.Tsat_arr[i]
+    def X(self,z):
+        if self.Xe(z) < 0:
+            return 0
+        if (self.Xe(z) >= 0) or (self.Xe(z) <= 1):
+            return self.Xe(z)
+        if self.Xe(z) > 1:
+            return 1
 
-        state = IAPWS97(P=self.Pressure(z)/1e6, T=self.T_fluid_arr[i])
-        sat = IAPWS97(P=self.Pressure(z)/1e6, x=0)
-
-        if TF < Tsat:
-            X = 0
-            Xe = (state.cp * TF) - (sat.cp * Tsat) / (sat.Hvap) 
-            rho = ((1-X)* state.v + X*state.v)**(-1)
-            T = (self.hfg(z) / state.cp) * Xe + Tsat 
-
-            return T
-
-        if TF == Tsat:
-            X = Xe
-            rho = ((1-X)* state.v + X*state.v)**(-1)
-            return Tsat #TSAT
-        
-        if TF > Tsat:
-            Xe = (state.cp * TF) - (sat.cp * Tsat) / (sat.Hvap)
-            X = 1 
-            rho = ((1-X)* state.v + X*state.v)**(-1)
-
-            T = (self.hfg(z) / state.cp) * Xe + Tsat 
-
-            return T
-
-    def hf(self,z):
-            state = IAPWS97(P=self.Pressure(z)/1e6,x=0) 
-            return state.h * 1e3 # J/kg
-
-    def hfg(self,z):
-            state = IAPWS97(P=self.Pressure(z)/1e6, x=0) 
-            return state.Hvap * 1e3 # K/kg
-
-    def dPdz(self, z):
-        dPdz_arr = np.gradient(self.P_arr, self.z)
-        return np.interp(z, self.z, dPdz_arr)
-
-    def dXedz(self, z):
-        Xe = self.Xe(z)
-        P = self.Pressure(z)/1e6 #MPa
-        dP = 1e-3 # small step for delta p MPA
-        dhf_dP = (IAPWS97(P=P+dP, x=0).h - IAPWS97(P=P-dP, x=0).h) * 1e3 / (2*dP*1e6)
-        dhfg_dP = (IAPWS97(P=P+dP, x=1).Hvap - IAPWS97(P=P-dP, x=1).Hvap) * 1e3 / (2*dP*1e6)
-
-        dP_dz = self.dPdz(z)
-        dh_dz = self.q1(z) / (self.Af * self.G)
-        return (dh_dz - (dhf_dP + Xe * dhfg_dP) * dP_dz) / self.hfg(z)
-
-    def Xe0(self):
+    def Xe(self,z):
         h0 = IAPWS97(P=self.P0/1e6, T=self.Tf0 + 273.15).h
         sat = IAPWS97(P=self.P0/1e6, x=0)
+        hfg = sat.Hvap
+        Xe_in = (h0 - sat.h) / hfg
 
-        return (h0 - sat.h) / sat.Hvap
+        A = (self.q0 / (self.Af * self.G * hfg)) * (self.Hi / np.pi)
+        X = A * (1- np.cos(np.pi * z / self.Hi)) + Xe_in
+        return X
+             
+    def rho_m(self,z):
+        r = 1/(IAPWS97(P=self.Pressure(z),x=0).v + IAPWS97(P=self.Pressure(z),x=1).v* self.X(z))
+        return r
 
-    #newton
+    def T2P(self,z):
+        T_wall = np.zeros_like(self.z)
+        T_bulk = np.zeros_like(self.z)
+        T_sat = np.zeros_like(self.z)
+        Xe_arr = np.zeros_like(self.z)
+        X_arr = np.zeros_like(self.z)
+        P_arr = np.zeros_like(self.z)
+
+        for i in len(T_wall):
+            if i == 0: 
+                T_bulk[i] = self.Tf0
+                Xe_arr[i] = self.Xe(0)
+                X_arr[i] = 0
+                P_arr[i] = self.P0
+
+            state = IAPWS97(P=self.Pressure(z)/1e6, T=self.T_bulk[i])
+            sat = IAPWS97(P=self.Pressure(z)/1e6, x=0)
+
+            if Xe_arr[i] < 0:
+                hfg = IAPWS97(P=P_arr[i],x=1).h - IAPWS97(P=P_arr[i],x=0).h
+                Tsat = IAPWS97(P=P_arr[i],x=0).T - 273.15
+                TF = (Xe_arr[i] * hfg / self.cp) + Tsat
+                
+                T_bulk[i] = TF
+                T_sat[i] = Tsat
+
+            if TF[i-1] == T_sat[i-1]:
+                return Tsat #TSAT
+
 
     ###########################
     #  Heat Convection in fluid
@@ -221,38 +192,6 @@ class Reactor:
 
         return T
 
-    def Temperature_Plot(self):
-        z = self.z
-
-        plt.figure()
-
-        # T = np.zeros_like(z)
-        # for j, zj in enumerate(z):
-        #     T[j] = self.T_Rod(r=0,z=zj)
-        # plt.plot(T,z,label=f'Centerline',color='red')
-
-        T = np.zeros_like(z)
-        for j, zj in enumerate(z):
-            T[j] = self.T_Rod(r=self.R1,z=zj)
-        plt.plot(T,z,label=f'Clad Surface',color='orange')
-
-        T = np.zeros_like(z)
-        for j, zj in enumerate(z):
-            T[j] = self.T_fluid(z=zj)
-        plt.plot(T,z,label=f'Bulk Fluid',color='blue')
-
-        plt.plot(self.Tsat_arr,z,label=f'Tsat',color='green',linestyle=':')
-        plt.xlabel('Temperature [C]')
-        plt.ylabel('Channel Height [m]')
-        plt.grid(alpha=0.5,color='gray',linestyle=":")
-        plt.legend()
-        plt.savefig(f'{self.name}_Temp.png',dpi=600)
-
-    def plotter(self): # returns all plots and questions
-        self.Temperature_Plot()
-        self.Pressure_Plot()
-        print(f'{self.name} Plotted!')
-
 
 Option_1 = Reactor(
     name='PWR Option 1',
@@ -270,5 +209,3 @@ Option_1 = Reactor(
     Tf0=277, # C
     dz = 0.1, # m 
     mode= 'PWR' )
-
-Option_1.plotter()
