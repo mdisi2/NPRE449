@@ -38,11 +38,11 @@ class PWR:
         self.R3 = self.Df / 2 # Gap : Fuel boundary
         self.R2 = self.R3 + self.Gap # Clad : Gap boundary
         self.State_Initial = IAPWS97(P=self.P0/1e6, T=self.Tf0+273.15) # MPa, K
-        self.Tsat = IAPWS97(P=self.P0/1e6, x=0).T - 273.15   # C
-        self.mu = self.State_Initial.mu              # Pa *s
-        self.cp = self.State_Initial.cp * 1e3        # J/kg·K
-        self.rho = self.State_Initial.rho             # kg/m3
-        self.kfluid = self.State_Initial.k               # W/m·K
+        self.Tsat = IAPWS97(P=self.P0/1e6, x=0).T - 273.15 # C
+        self.mu = self.State_Initial.mu # Pa *s
+        self.cp = self.State_Initial.cp * 1e3 # J/kg K
+        self.rho = self.State_Initial.rho # kg/m3
+        self.kfluid = self.State_Initial.k # W/m K
         self.Pr = self.mu * self.cp / self.kfluid
         self.Re = self.G * self.Dh / self.mu
 
@@ -217,7 +217,6 @@ Option_1 = PWR(
     dz = 0.1) # m
 
 Option_1.plotter()
-
 
 ### Varying P
 
